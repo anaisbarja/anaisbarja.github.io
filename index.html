@@ -1,0 +1,827 @@
+<!-- 
+  Credit to Prof. Grant Williams for initial starter code
+ -->
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+      }
+      canvas {
+        width: 800;
+        height: 600;
+      }
+      #render-button {
+        width: 180px;
+        height: 50px;
+        font-size: 24pt;
+      }
+      #the-canvas {
+        border: 1px solid darkblue;
+      }
+      #user-matrix input {
+        width: 64px;
+        font-size: 24px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="the-canvas" width="800" height="600"></canvas>
+    <script src="lib.js"></script>
+    <script src="light.js"></script>
+    <script src="vector.js"></script>
+    <script src="matrix.js"></script>
+    <script src="scene.js"></script>
+    <script src="normal_mesh.js"></script>
+    <script src="controls.js"></script>
+    <script src="cam.js"></script>
+    <script src="lit_material.js"></script>
+    <!-- <script src = "programs.js"></script> -->
+    <script>
+      let canvas = document.getElementById("the-canvas");
+      /** @type {WebGLRenderingContext} */
+      let gl = canvas.getContext("webgl2");
+
+      const GOURAUD_VERTEX_SHADER = 
+            `   #version 300 es
+                precision mediump float;
+
+                uniform mat4 projection;
+                uniform mat4 modelview;
+                uniform mat4 model;
+                uniform mat4 view;
+                uniform vec3 viewer_loc;
+
+                uniform vec3 sun_dir;
+                uniform vec3 sun_color;
+                
+                uniform vec3 light1_loc;
+                uniform vec3 light1_color;
+
+
+                const float light_attenuation_k = 0.01;
+                const float light_attenuation_l = 0.1;
+                const float light_attenuation_q = 0.00; /* no quadratic term for now */
+
+                uniform float mat_ambient;
+                uniform float mat_diffuse;
+                uniform float mat_specular;
+                uniform float mat_shininess;
+
+
+                in vec3 coordinates;
+                in vec4 color;
+                in vec2 uv;
+                in vec3 surf_normal;
+
+                out vec4 v_color;
+                out vec2 v_uv;
+
+                vec3 diff_color( 
+                    vec3 normal, 
+                    vec3 light_dir,
+                    vec3 light_color, 
+                    float mat_diffuse 
+                ) {
+                    return mat_diffuse * light_color * max( dot( normal, light_dir ), 0.0 );
+                }
+
+                vec3 spec_color( 
+                    vec3 normal, 
+                    vec3 light_dir,
+                    vec3 eye_dir, 
+                    vec3 light_color, 
+                    float mat_specular,
+                    float mat_shiniess
+                ) {
+                    float cos_light_surf_normal = dot( normal, light_dir );
+
+                    if( cos_light_surf_normal <= 0.0 ) {
+                        return vec3( 0.0, 0.0, 0.0 );
+                    }
+
+
+
+                    
+
+                    vec3 light_reflection = 
+                        2.0 * cos_light_surf_normal * normal - light_dir;
+
+                    return 
+                        pow( 
+                            max( dot( light_reflection, normalize( eye_dir ) ), 0.0  ),
+                            mat_shininess 
+                        ) * light_color * mat_specular;
+                }
+
+                float attenuation( vec3 vector_to_light ) {
+                    float light1_dist = length( vector_to_light );
+                    float light1_atten = 1.0 / ( 
+                        light_attenuation_k + 
+                        light_attenuation_l * light1_dist +
+                        light_attenuation_q * light1_dist * light1_dist
+                    );
+
+                    return light1_atten;
+                }
+
+                void main( void ) {
+                    vec3 normal_tx = normalize( mat3( model ) * surf_normal );
+                    vec3 coords_tx = ( model * vec4( coordinates, 1.0 ) ).xyz;
+
+                    gl_Position = projection * modelview * vec4( coordinates, 1.0 );
+                    vec3 eye_dir = normalize( viewer_loc - coords_tx );
+
+                    vec4 ambient_color = vec4( mat_ambient, mat_ambient, mat_ambient, 1.0 );
+
+                    // vec3 sun_dir_tx = 
+                    float cos_sun_dir_surf_normal = dot( sun_dir, normal_tx );
+                    vec3 sun_diffuse_color = diff_color( normal_tx, sun_dir, sun_color, mat_diffuse );
+                    
+                    vec3 sun_spec_color =
+                        spec_color( normal_tx, sun_dir, eye_dir, sun_color, mat_specular, mat_shininess );
+
+                    vec4 color_from_sun = vec4( sun_diffuse_color + sun_spec_color, 1.0 );
+
+                    vec3 vector_to_light1 = light1_loc - coords_tx;
+                    vec3 light1_dir = normalize( vector_to_light1 );
+                    float light1_atten = attenuation( vector_to_light1 );
+
+
+
+                
+                    vec3 light1_diffuse_color = diff_color( 
+                        normal_tx, light1_dir, light1_color, mat_diffuse);
+                    vec3 light1_spec_color = spec_color( 
+                        normal_tx, light1_dir, eye_dir, light1_color, mat_specular, mat_shininess );
+                    vec4 color_from_light1 = vec4(
+                            ( light1_diffuse_color + light1_spec_color ) * light1_atten, 1.0 );
+
+
+                    /* multiply color by 0 to remove it. try changing the 0 to a small number like .2
+                    and the 1 to the complement of that number (1 - .2 = .8) to see how color blending works.*/
+                    v_color = 
+                        ( 0.0 * color ) + 
+                        ( 1.0 * (
+                            ambient_color +
+                            color_from_sun +
+                            color_from_light1
+                        ) );
+
+                    v_uv = uv;
+                }
+            `;
+
+
+      // const GOURAUD_VERTEX_SHADER = 
+      //       `   #version 300 es
+      //           precision mediump float;
+
+      //           uniform mat4 projection;
+      //           uniform mat4 modelview;
+      //           uniform mat4 model;
+      //           uniform mat4 view;
+      //           uniform vec3 viewer_loc;
+
+      //           uniform vec3 sun_dir;
+      //           uniform vec3 sun_color;
+                
+      //           uniform vec3 light1_loc;
+      //           uniform vec3 light1_color;
+
+      //           const float light_attenuation_k = 0.01;
+      //           const float light_attenuation_l = 0.1;
+      //           const float light_attenuation_q = 0.00; /* no quadratic term for now */
+
+      //           uniform float mat_ambient;
+      //           uniform float mat_diffuse;
+      //           uniform float mat_specular;
+      //           uniform float mat_shininess;
+
+      //           in vec3 coordinates;
+      //           in vec4 color;
+      //           in vec2 uv;
+      //           in vec3 surf_normal;
+
+      //           out vec4 v_color;
+      //           out vec2 v_uv;
+
+      //           vec3 diff_color( 
+      //               vec3 normal, 
+      //               vec3 light_dir,
+      //               vec3 light_color, 
+      //               float mat_diffuse 
+      //           ) {
+      //               return mat_diffuse * light_color * max( dot( normal, light_dir ), 0.0 );
+      //           }
+
+      //           vec3 spec_color( 
+      //               vec3 normal, 
+      //               vec3 light_dir,
+      //               vec3 eye_dir, 
+      //               vec3 light_color, 
+      //               float mat_specular,
+      //               float mat_shiniess
+      //           ) {
+      //               float cos_light_surf_normal = dot( normal, light_dir );
+
+      //               if( cos_light_surf_normal <= 0.0 ) {
+      //                   return vec3( 0.0, 0.0, 0.0 );
+      //               }
+
+      //               vec3 light_reflection = 
+      //                   2.0 * cos_light_surf_normal * normal - light_dir;
+
+      //               return 
+      //                   pow( 
+      //                       max( dot( light_reflection, normalize( eye_dir ) ), 0.0  ),
+      //                       mat_shininess 
+      //                   ) * light_color * mat_specular;
+      //           }
+
+      //           float attenuation( vec3 vector_to_light ) {
+      //               float light1_dist = length( vector_to_light );
+      //               float light1_atten = 1.0 / ( 
+      //                   light_attenuation_k + 
+      //                   light_attenuation_l * light1_dist +
+      //                   light_attenuation_q * light1_dist * light1_dist
+      //               );
+
+      //               return light1_atten;
+      //           }
+
+      //           void main( void ) {
+      //               vec3 normal_tx = normalize( mat3( model ) * surf_normal );
+      //               vec3 coords_tx = ( model * vec4( coordinates, 1.0 ) ).xyz;
+
+      //               gl_Position = projection * modelview * vec4( coordinates, 1.0 );
+      //               vec3 eye_dir = normalize( viewer_loc - coords_tx );
+
+      //               vec4 ambient_color = vec4( mat_ambient, mat_ambient, mat_ambient, 1.0 );
+
+      //               // vec3 sun_dir_tx = 
+      //               float cos_sun_dir_surf_normal = dot( sun_dir, normal_tx );
+      //               vec3 sun_diffuse_color = diff_color( normal_tx, sun_dir, sun_color, mat_diffuse );
+                    
+      //               vec3 sun_spec_color =
+      //                   spec_color( normal_tx, sun_dir, eye_dir, sun_color, mat_specular, mat_shininess );
+
+      //               vec4 color_from_sun = vec4( sun_diffuse_color + sun_spec_color, 1.0 );
+
+      //               vec3 vector_to_light1 = light1_loc - coords_tx;
+      //               vec3 light1_dir = normalize( vector_to_light1 );
+      //               float light1_atten = attenuation( vector_to_light1 );
+                
+      //               vec3 light1_diffuse_color = diff_color( 
+      //                   normal_tx, light1_dir, light1_color, mat_diffuse);
+      //               vec3 light1_spec_color = spec_color( 
+      //                   normal_tx, light1_dir, eye_dir, light1_color, mat_specular, mat_shininess );
+      //               vec4 color_from_light1 = vec4(
+      //                       ( light1_diffuse_color + light1_spec_color ) * light1_atten, 1.0 );
+
+      //               /* multiply color by 0 to remove it. try changing the 0 to a small number like .2
+      //               and the 1 to the complement of that number (1 - .2 = .8) to see how color blending works.*/
+      //               v_color = 
+      //                   ( 0.0 * color ) + 
+      //                   ( 1.0 * (
+      //                       ambient_color +
+      //                       color_from_sun +
+      //                       color_from_light1
+      //                   ) );
+      //               v_uv = uv;
+      //           }
+      //       `;
+
+      const GOURAUD_FRAGMENT_SHADER = `   #version 300 es
+                precision mediump float;
+
+                in vec4 v_color;
+                in vec2 v_uv;
+
+                out vec4 f_color;
+
+                uniform sampler2D tex_0;
+
+                void main( void ) {
+                    f_color = v_color * texture( tex_0, v_uv ); 
+
+                    /* we can test depth values with this.
+                    f_color = vec4(vec3(gl_FragCoord.z), 1.0); */
+                }
+            `;
+
+      let lit_program = create_compile_and_link_program(gl, /*PHONG_VERTEX_SHADER,*/ GOURAUD_VERTEX_SHADER, /*PHONG_FRAGMENT_SHADER,*/ GOURAUD_FRAGMENT_SHADER);
+
+      gl.useProgram(lit_program);
+
+      set_render_params(gl);
+
+      let last_update = performance.now();
+
+      const DESIRED_TICK_RATE = 30;
+      const DESIRED_MSPT = 1000.0 / DESIRED_TICK_RATE;
+
+      const ROTATION_SPEED = 0.3; // eighth turn per second
+      const ROTATION_SPEED_PER_FRAME = ROTATION_SPEED / DESIRED_TICK_RATE;
+
+      const FLY_SPEED = 4.5; // units per second
+      const FLY_SPEED_PER_FRAME = FLY_SPEED / DESIRED_TICK_RATE;
+
+      let keys = Keys.start_listening();
+      let cam = new Camera();
+      cam.translate(0, 5, 0);
+
+      let scene = new Scene()
+      let mother = scene.create_node(0,0,0,0,0,0,1,1,1);
+
+      let sun_dir = new Vec4(0, 1, 0.0, 0.0).norm();
+      // let sun = new Light(sun_dir.x, sun_dir.y, sun_dir.z, 1.0, 0.95, 0.85, -1);
+      // scene.set_sun_color(0.0, 0.0, 0.0)
+      scene.set_sun_color(.5, 0.5, 0.5)
+      scene.set_sun_direction(sun_dir.x, sun_dir.y, sun_dir.z)
+      console.log(scene)
+
+
+      let babyScene = new Scene()
+      let baby = babyScene.create_node(0,0,0,0,0,0,1,1,1);
+
+      let environment = mother.create_child_node(0,0,0,0,0,0,1,1,1);
+      let cubeSize=60
+      let depthFromCenter = cubeSize/2
+      function setEnvironment(){
+        let sky = new LitMaterial(gl, "environment/sky.jpg", gl.LINEAR, 1, 0, 0, 0);
+        let cube = NormalMesh.mapped_box(gl, lit_program, cubeSize, cubeSize, cubeSize, sky);
+        let cubeNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,cube);
+        // cubeNode.translate(0,depthFromCenter,0)
+
+        let water = new LitMaterial(gl, "environment/water.jpg", gl.LINEAR, 1, 1, 1, 1)
+        let lake = NormalMesh.platform(gl, lit_program, cubeSize, cubeSize,0,1, water)
+        let lakeChild= environment.create_child_node(0,0,0,0,0,0,1,1,1,lake);
+        lakeChild.translate(0,-depthFromCenter/4,0)
+
+
+        let sand = new LitMaterial(gl, "environment/sand.png", gl.LINEAR, 1, .1, .1, 0.1);
+        let ground = NormalMesh.terrain(gl, lit_program, 5, 4, sand) 
+        let groundNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,ground);
+        groundNode.translate(0,-depthFromCenter/4,0)
+
+        let sandEdges = new LitMaterial(gl, "environment/border.png", gl.LINEAR, 1, 0, 0, 0);
+        let border = NormalMesh.platform(gl, lit_program, cubeSize, cubeSize,0,1, sandEdges)
+        let borderNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,border);
+        borderNode.translate(0,(-depthFromCenter/4)+0.01,0) 
+      }
+      
+      setEnvironment();
+
+      let windmill = mother.create_child_node(0,0,0,0,0,0,1,1,1);
+      let fanBodyNode
+      function setWindmill(){
+        let windmillBody = new LitMaterial(gl, "windmill/windmillBody.png", gl.LINEAR, 1, 1, 2, 4);
+        let windMillBodyPeice = NormalMesh.from_obj_file(gl, "windmill/windmill.obj", lit_program, windmillBody);
+        let windmillBodyNode = windmill.create_child_node(0,0,0,0,0,0,1,1,1,windMillBodyPeice);
+        windmillBodyNode.translate(-4,(-depthFromCenter/4)+1,4) 
+
+        let fanBody = new LitMaterial(gl, "windmill/fan.png", gl.LINEAR, 1, 1, 2, 4);
+        let fanBodyPeice = NormalMesh.from_obj_file(gl, "windmill/fan.obj", lit_program, fanBody);
+        fanBodyNode = windmillBodyNode.create_child_node(0,0,0,0,0,0,1,1,1,fanBodyPeice);
+        fanBodyNode.translate(2,6.5,0) 
+
+
+      }
+      setWindmill()
+
+      let ufo = mother.create_child_node(0,0,0,0,0,0,1,1,1);
+      let ufoPivotNode
+      let ufoBodyNode
+      let ufoVector
+      function setUfo(){
+        ufoPivotNode = ufo.create_child_node(0,0,0,0,0,0,1,1,1);
+        ufoPivotNode.translate(0,15,0) 
+
+        let ufoMat = new LitMaterial(gl, "ufo/ufo.png", gl.LINEAR, 1, 1, 2, 4);
+        let ufoBody = NormalMesh.from_obj_file(gl, "ufo/ufo.obj", lit_program, ufoMat);
+        ufoBodyNode = ufoPivotNode.create_child_node(0,0,0,0,0,0,1,1,1,ufoBody);
+        ufoBodyNode.translate(10,0,0) 
+
+
+      }
+      setUfo()
+
+      let car = mother.create_child_node(0,0,0,0,0,0,1,1,1);
+      let movingWheels=[]
+      let currRotation =0
+      let carMotionAmount = 0.2
+      let maxRotation = 15
+      let minRotation = -15
+      let rotationAmount = 1
+      let carBodyNode
+      function setCar(){
+        let carBodyMat = new LitMaterial(gl, "car/body.png", gl.LINEAR, 1, 1, 2, 4);
+        let carBody = NormalMesh.from_obj_file(gl, "car/body.obj", lit_program, carBodyMat);
+        carBodyNode = car.create_child_node(0,0,0,0,0,0,1,1,1,carBody);
+        carBodyNode.translate(0,(-depthFromCenter/4)+1,0) 
+
+        let wheelMat = new LitMaterial(gl, "car/wheel.png", gl.LINEAR, 1, 1, 2, 4);
+        let wheel = NormalMesh.from_obj_file(gl, "car/wheel.obj", lit_program, wheelMat);
+        
+        let topLeftWheelNode = carBodyNode.create_child_node(0,0,0,0,0,0,1,1,1,wheel);
+        topLeftWheelNode.translate(-.55,0,1.05)
+        topLeftWheelNode.add_yaw(.5)
+        movingWheels.push(topLeftWheelNode)
+        
+        let topRightWheelNode = carBodyNode.create_child_node(0,0,0,0,0,0,1,1,1,wheel);
+        topRightWheelNode.translate(.55,0,1.05)  
+        movingWheels.push(topRightWheelNode)
+        
+        let bottomLeftWheelNode = carBodyNode.create_child_node(0,0,0,0,0,0,1,1,1,wheel);
+        bottomLeftWheelNode.add_yaw(.5)
+        bottomLeftWheelNode.translate(-.55,0,-.75) 
+
+        let bottomRightWheelNode = carBodyNode.create_child_node(0,0,0,0,0,0,1,1,1,wheel);
+        bottomRightWheelNode.translate(.55,0,-.75)  
+
+
+      }
+      setCar()
+
+
+      let tvScreenNode
+      let house = mother.create_child_node(0,0,0,0,0,0,1,1,1);
+      let bulbNode
+      let bulbRot = 0
+      let bulbRotAmount = 1
+      let bulbRotMax = 10*10
+      let bulbRotMin = -10*10
+      let bulbDir="left"
+      let bulbDirVector=new Vec4(1,1,1,1);
+      function setHouse(){
+        let houseShellMat = new LitMaterial(gl, "house/house.png", gl.LINEAR, .3, .5, 1.2, .1);
+        let houseShell = NormalMesh.from_obj_file(gl, "house/house.obj", lit_program, houseShellMat);
+        let houseNode = house.create_child_node(0,0,0,0,0,0,1,1,1,houseShell);
+        houseNode.translate(4,(-depthFromCenter/4)+1,4) 
+        // houseNode.change_scale(.05,.05,.05) 
+
+        let bulbMat = new LitMaterial(gl, "house/bulb.png", gl.LINEAR, 1, 1, 2, 4);
+        let bulb = NormalMesh.from_obj_file(gl, "house/bulb.obj", lit_program, bulbMat);
+        bulbNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,bulb);
+        // bulbNode.change_scale(1,2,2) 
+
+        bulbNode.translate(0,1.62,0.5) 
+
+        baby.root = bulbNode;
+        
+
+
+        let couchShellMat = new LitMaterial(gl, "house/couch.png", gl.LINEAR, .8, .3, .3, .3);
+        let couchShell = NormalMesh.from_obj_file(gl, "house/couch.obj", lit_program, couchShellMat);
+        let couchNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,couchShell);
+        couchNode.translate(0.7,.28 ,-1.6 ) 
+        couchNode.change_scale(.7,1.1,1 ) 
+
+        let womenMat = new LitMaterial(gl, "house/women.png", gl.LINEAR, .8, .1, .1, .1);
+        let women = NormalMesh.from_obj_file(gl, "house/women.obj", lit_program, womenMat);
+        let womenNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,women);
+        womenNode.translate(.8,.35 ,-1.35 )
+        womenNode.change_scale(.8,.8 ,.8 ) 
+        womenNode.add_roll(.05 ) 
+
+        let shrekMat = new LitMaterial(gl, "house/shrek.png", gl.LINEAR, 1, .1, .1, .1);
+        let shrek = NormalMesh.from_obj_file(gl, "house/shrek.obj", lit_program, shrekMat);
+        let shrekNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,shrek);
+        shrekNode.translate(-0.85,.42 ,-1.15 ) 
+        shrekNode.add_yaw(0.26) 
+        shrekNode.add_pitch(-.04) 
+
+        let tvTableMat = new LitMaterial(gl, "house/tvTable.png", gl.LINEAR, 1, 1, 2, 4);
+        let tvTable = NormalMesh.from_obj_file(gl, "house/tvTable.obj", lit_program, tvTableMat);
+        let tvTableNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,tvTable);
+        tvTableNode.add_yaw(.25);
+        tvTableNode.change_scale(1,.7,1);
+        tvTableNode.translate(0,.4 ,-.2 ) 
+
+        let tvMat = new LitMaterial(gl, "house/tv.png", gl.LINEAR, 1, 1, 2, 4);
+        let tv = NormalMesh.from_obj_file(gl, "house/tv.obj", lit_program, tvMat);
+        let tvNode = houseNode.create_child_node(0,0,0,0,0,0,1,1,1,tv);
+        tvNode.add_yaw(.25);
+        tvNode.translate(0,.74 ,-.2 ) 
+
+        let tvScreenMat = new LitMaterial(gl, "house/tv.png", gl.LINEAR, 1, 1, 2, 4);
+        let tvScreen = NormalMesh.platform(gl, lit_program, .3,.215,0,1,tvScreenMat);
+        tvScreenNode = tvNode.create_child_node(0,0,0,0,0,0,1,1,1,tvScreen);
+        tvScreenNode.add_roll(.25);
+        tvScreenNode.add_pitch(.25);
+        tvScreenNode.translate(0.11,0.11 ,-0.08 ) 
+        
+
+        houseNode.add_yaw(.5);
+        // houseNode.add_roll(0.25);
+        // houseNode.add_pitch(20);
+      }
+      setHouse()
+
+
+
+
+      let projection = Mat4.perspective_fovx(0.125, 4 / 3, 0.125, 1024);
+      let current_program = lit_program;
+
+      // The code below related to rendering a video is copied from a tutorial by the Mozilla Foundation
+      // Credit to this article for the vide rendering code
+      // Credit to the following contributors: 
+      // Sheppy, rajaron7, jamesdhurd, stephaniehobson, DaveVoyles, gmanpersona, benjaffe, mpuels, nmve, fscholz, chrisdavidmills, Jeremie, foxbrush, rex64, bjacob, AllenZ, yyss
+      // https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Animating_textures_in_WebGL
+
+      function updateTexture(gl, texture, video) {
+          const level = 0;
+          const internalFormat = gl.RGBA;
+          const srcFormat = gl.RGBA;
+          const srcType = gl.UNSIGNED_BYTE;
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texImage2D(
+              gl.TEXTURE_2D,
+              level,
+              internalFormat,
+              srcFormat,
+              srcType,
+              video
+          );
+      }
+
+      function setupVideo(url) {
+        const video = document.createElement("video");
+
+        var playing = false;
+        var timeupdate = false;
+
+        video.playsInline = true;
+        video.muted = true;
+        video.loop = true;
+
+        video.addEventListener(
+            "playing",
+            function () {
+                playing = true;
+                checkReady();
+            },
+            true
+        );
+
+        video.addEventListener(
+            "timeupdate",
+            function () {
+                timeupdate = true;
+                checkReady();
+            },
+            true
+        );
+
+        video.src = url;
+        video.play();
+
+        function checkReady() {
+            if (playing && timeupdate) {
+                copyVideo = true;
+            }
+        }
+
+        return video;
+      }
+
+
+      var copyVideo = false;
+      const video = setupVideo("house/tvShow.mp4");
+
+      function render(now) {
+        
+        last_update = now;
+
+        if (copyVideo) {
+            // console.log("tvScreenNode.data.",tvScreenNode.data.material.tex)
+            updateTexture(gl, tvScreenNode.data.material.tex, video);
+            fanBodyNode.add_pitch(.001)
+            ufoPivotNode.add_yaw(0.003)
+            ufoVector = ufoPivotNode.get_this_dir_matrix().transform(1,1,1,1)
+            if(bulbDir=="left"){
+              if(bulbRot>bulbRotMin){
+                bulbRot-=bulbRotAmount
+                bulbNode.add_roll(0.001/-bulbRotAmount)
+              }else{
+                bulbDir = "right"
+              }
+            } else if(bulbDir=="right"){
+              if(bulbRot<bulbRotMax){
+                bulbRot+=bulbRotAmount
+                bulbNode.add_roll(0.001/bulbRotAmount)
+              }else{
+                bulbDir = "left"
+              }
+            }
+            bulbDirVector=bulbNode.get_this_dir_matrix().transform(1,1,1,1)
+            
+
+        }
+
+        requestAnimationFrame(render);
+
+
+
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        // we're using world-space lighting, so it's okay to combine projection
+        // and model-view like this.
+        let model = Mat4.translation(0, 0, 0);
+        // model = model.mul( projection );
+        let view = cam.get_view_matrix();
+        // model = model.mul( cam.get_view_matrix() );
+        let modelview = view.mul(model);
+
+        set_uniform_matrix4(gl, current_program, "projection", projection.data);
+        set_uniform_matrix4(gl, current_program, "modelview", modelview.data);
+        set_uniform_matrix4(gl, current_program, "model", model.data);
+        set_uniform_matrix4(gl, current_program, "view", view.data);
+
+        // transform viewer coordinates
+        // let viewer_loc = cam.get_transformed_coordinates();
+        set_uniform_vec3(gl, current_program, "viewer_loc", cam.x, cam.y, cam.z);
+
+        // // bind lights
+        let sun_di = ufoVector
+        // console.log(sun_di)
+        let sun = new Light(sun_di.x, sun_di.y, sun_di.z, 0.05, 0.14, 0.05, 0);
+        sun.bind(gl, current_program, modelview);
+
+
+        let sun_dir = bulbDirVector
+        let light1 = new Light(sun_dir.x+3.2, -5.8, sun_dir.z+3, .5, 0.45, 0.45, 1);
+        light1.bind(gl, current_program, modelview);
+
+
+        let jobs = []
+        let light = []
+        // console.log(light)
+        scene.generate_render_batch(jobs,light)
+
+        //
+
+        // console.log(jobs)
+
+        // motherNode.add_yaw(-ROTATION_SPEED_PER_FRAME);
+
+        for(let i=0;i<jobs.length;i++){
+          let modelview2 = view.mul(jobs[i].matrix);
+          set_uniform_matrix4(gl, current_program, "model", jobs[i].matrix.data);
+          set_uniform_matrix4(gl, current_program, "modelview", modelview2.data);
+          
+          jobs[i].mesh.render(gl)
+        }
+
+        // for(let i=0;i<light.length;i++){
+
+        //   let color = [light[i].color.r,light[i].color.g,light[i].color.b,light[i].color.light_no]
+        //   let sun_dir = [light[i].loc.x,light[i].loc.y,light[i].loc.z]
+        //   let sun = new Light(sun_dir[0], sun_dir[1], sun_dir[2], color[0], color[1], color[2], 0);
+        //   sun.bind(gl, current_program, modelview);
+        // }
+
+        // scene.bind_sun(gl, current_program)
+
+        // for(let i=0;i<meshes.length;i++){
+        //   meshes[i].render(gl);
+        // }
+
+
+        // if(windmill !=null){
+        //   windmill.render(gl)
+        // }
+
+        // meshs.render(gl);
+
+        // function generate_render_jobs( parent_matrix, node, jobs ) {
+        //   let matrix = parent_matrix.mul( node.get_matrix() );
+        //   if( this.data != null ) { 
+        //     jobs.push( new RenderMesh( matrix, this.data ) );
+        //   }
+        // }
+
+      }
+      
+
+      const KEYMAP = {
+        KeyH: function () {
+          if(currRotation>minRotation){
+            currRotation-=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(-.01/rotationAmount)
+            }
+          }
+          // console.log("currRotation",currRotation)
+        },
+        KeyK: function () {
+          if(currRotation<maxRotation){
+            currRotation+=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(.01/rotationAmount)
+            }
+          }
+          // console.log("currRotation",currRotation)
+        },
+        KeyU: function () {
+          //left
+          if(currRotation<0){
+            currRotation+=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(.01/rotationAmount)
+            }
+            carBodyNode.add_yaw(.01/-rotationAmount)
+          }else if(currRotation>0){
+            currRotation-=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(-.01/rotationAmount)
+            }
+            carBodyNode.add_yaw(.01/rotationAmount)
+          }
+          // console.log("currRotation",currRotation)
+          carBodyNode.move_in_direction(0,0,carMotionAmount)
+        },
+        KeyJ: function () {
+          //left
+          if(currRotation<0){
+            currRotation+=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(0.01/rotationAmount)
+            }
+            carBodyNode.add_yaw(0.01/rotationAmount)
+          }else if(currRotation>0){
+            currRotation-=rotationAmount;
+            for(let wheel of movingWheels){
+              wheel.add_yaw(-0.01/rotationAmount)
+            }
+            carBodyNode.add_yaw(-0.01/rotationAmount)
+          }
+          carBodyNode.move_in_direction(0,0,-carMotionAmount)
+        },
+        // KeyZ: function () {
+        //   motherNode.add_yaw(-ROTATION_SPEED_PER_FRAME);
+        // },
+        KeyW: function () {
+          cam.move_in_direction(0, 0, FLY_SPEED_PER_FRAME);
+        },
+        KeyS: function () {
+          cam.move_in_direction(0, 0, -FLY_SPEED_PER_FRAME);
+        },
+        KeyA: function () {
+          cam.move_in_direction(-FLY_SPEED_PER_FRAME, 0, 0);
+        },
+        KeyD: function () {
+          cam.move_in_direction(FLY_SPEED_PER_FRAME, 0, 0);
+        },
+        Space: function () {
+          cam.translate(0, FLY_SPEED_PER_FRAME, 0);
+        },
+        KeyC: function () {
+          cam.translate(0, -FLY_SPEED_PER_FRAME, 0);
+        },
+        KeyQ: function () {
+          cam.add_roll(-ROTATION_SPEED_PER_FRAME);
+        },
+        KeyE: function () {
+          cam.add_roll(ROTATION_SPEED_PER_FRAME);
+        },
+        ArrowLeft: function () {
+          cam.add_yaw(-ROTATION_SPEED_PER_FRAME);
+        },
+        ArrowRight: function () {
+          cam.add_yaw(ROTATION_SPEED_PER_FRAME);
+        },
+        ArrowUp: function () {
+          cam.add_pitch(-ROTATION_SPEED_PER_FRAME);
+        },
+        ArrowDown: function () {
+          cam.add_pitch(ROTATION_SPEED_PER_FRAME);
+        },
+      };
+
+      function update() {
+        let keys_down = keys.keys_down_list();
+
+        for (const key of keys_down) {
+          let bound_function = KEYMAP[key];
+
+          if (bound_function) {
+            bound_function();
+          }
+        }
+
+        
+        return;
+      }
+      requestAnimationFrame(render);
+
+      setInterval(update, DESIRED_MSPT);
+
+
+    </script>
+  </body>
+</html>
