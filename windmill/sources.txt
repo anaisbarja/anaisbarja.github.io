@@ -1,0 +1,2 @@
+windmill.obj, fan.obj, windmillBody.png and fan.png = Windmill: by ahedov
+https://blendswap.com/blend/9755
