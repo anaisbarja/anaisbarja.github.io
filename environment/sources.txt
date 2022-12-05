@@ -1,0 +1,13 @@
+border.jpg = is a self modified version of water.jpg
+
+sand.png = is a self modified version of sky.jpg
+
+sky.jpg = is a modified version of "png-skybox-texture-mapping-cube-mapping-landscape-wate-980130": by Taibeen
+https://www.cleanpng.com/png-skybox-texture-mapping-cube-mapping-landscape-wate-980130/download-png.html
+
+water.jpg = WATERPLAIN0015 - Image 1 - Seamless: by Textures.com
+https://www.textures.com/download/WaterPlain0015/8946
+
+
+
+
