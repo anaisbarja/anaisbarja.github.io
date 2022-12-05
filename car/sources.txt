@@ -1,0 +1,10 @@
+body.obj and wheel.obj = is a modified version of "VAZ2106 Base and Wheels 3D model": by Denzer01
+https://www.turbosquid.com/3d-models/vaz2106-base-and-wheels-3d-model-1811469 
+
+body.png and wheel.png were created by me which is why they look really bad.
+
+
+
+
+
+
