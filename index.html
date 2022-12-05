@@ -351,7 +351,7 @@
       let cubeSize=60
       let depthFromCenter = cubeSize/2
       function setEnvironment(){
-        let sky = new LitMaterial(gl, "environment/sky.jpg", gl.LINEAR, 1, 0, 0, 0);
+        let sky = new LitMaterial(gl, "environment/sky.jpg", gl.LINEAR, 1, 0.1, 0.1, 0.1);
         let cube = NormalMesh.mapped_box(gl, lit_program, cubeSize, cubeSize, cubeSize, sky);
         let cubeNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,cube);
         // cubeNode.translate(0,depthFromCenter,0)
@@ -367,7 +367,7 @@
         let groundNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,ground);
         groundNode.translate(0,-depthFromCenter/4,0)
 
-        let sandEdges = new LitMaterial(gl, "environment/border.png", gl.LINEAR, 1, 0, 0, 0);
+        let sandEdges = new LitMaterial(gl, "environment/border.png", gl.LINEAR, 1, 0.1, 0.1, 0.1);
         let border = NormalMesh.platform(gl, lit_program, cubeSize, cubeSize,0,1, sandEdges)
         let borderNode = environment.create_child_node(0,0,0,0,0,0,1,1,1,border);
         borderNode.translate(0,(-depthFromCenter/4)+0.01,0) 
