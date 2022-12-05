@@ -1,0 +1,28 @@
+couch.png and couch.obj = "3D model Low Poly Sofa" by tedpermana
+https://www.turbosquid.com/3d-models/3d-model-low-poly-sofa-1741699
+
+house.png and house.obj = "Wooden Cabin": by glDev
+https://www.turbosquid.com/3d-models/free-wooden-cabin-3d-model/786883
+
+shrek.png and shrek.obj = are modified versions of "Shrek figurine free 3d model": by 3dmag.org
+https://3dmag.org/en/market/download/item/4106/
+
+tv.png and tv.obj = are modified versions of "Low Poly Television 3D model": by FATIH ORHAN
+https://www.turbosquid.com/3d-models/low-poly-television-3d-model-1828443
+
+tvShow.mp4 - Never Gonna Give You Up: by Rick Astley
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+tvTable.png and tvTable.obj = "3D Furniture Console 003 FREE": by DecoratorC4D
+https://www.turbosquid.com/3d-models/3d-furniture-console-003-free-1801215
+
+women.obj = is a modified version of "Humano Casual woman sitting": by Humano
+https://www.cgtrader.com/items/2120511/download-page
+
+bulb.obj = "Light bulb model": by Falha_Tecnologica
+https://www.turbosquid.com/3d-models/light-bulb-model-1742141
+
+bulb.png = my own texture.
+
+
+
